@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 import imutils
 import numpy as np
 
-image = cv2.imread('samples/greenscreen3.jpg')
+image = cv2.imread('./samples/greenscreen3.jpg')
 frame_y, frame_x, frame_colors = image.shape
 
 # IMG_COMPOSITE_FILENAME = "D:\\sp_globalwarming498x370.jpg";
-IMG_COMPOSITE_FILENAME = "samples/67899726_10215481153205503_6083579797621964800_n.jpg"
-IMG_COMPOSITE_FILENAME = "samples/68555334_10162036457415177_5374707312411803648_n.jpg"
+IMG_COMPOSITE_FILENAME = "./samples/67899726_10215481153205503_6083579797621964800_n.jpg"
+IMG_COMPOSITE_FILENAME = "./samples/68555334_10162036457415177_5374707312411803648_n.jpg"
 
 print('Image type: ', type(image),
       'Image Dimensions : ', image.shape)
