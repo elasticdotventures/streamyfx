@@ -58,10 +58,22 @@ def transmogrify(frame, frame_x, frame_y, imgx):
 #    upper_blue = np.array([120, 100, 255]) 
 
     # CHROMA-GREEN
-    # 24b24e or 0, 177, 64  -- 00b140
-    offset = 0x4F # wow! jpeg really fucks with color! 
-    lower_green = np.array([0,0xb1-offset,0])
-    upper_green = np.array([offset, 0xb1+offset, 0x40+offset ])
+    # 24b24e or 0, 177, 64  -- 00b140 
+  
+    chroma_distance = 0x4f # wow! jpeg really fucks with color! 
+    neversubzero = lambda x : (0,x)[x>0]
+    vfunc = np.vectorize(neversubzero)
+    CHROMA = [ 0x00, 0xb1, 0x40 ];
+    
+    # colorspaces are wonky. need to study more:
+    # https://www.learnopencv.com/color-spaces-in-opencv-cpp-python/
+    lower_green = np.array([ CHROMA[0]-chroma_distance, CHROMA[1]-chroma_distance, CHROMA[2]-chroma_distance ]);
+    lower_green = vfunc(lower_green)
+    
+    upper_green = np.array([ CHROMA[0]+chroma_distance, CHROMA[1]+chroma_distance, CHROMA[2]+chroma_distance ])
+    upper_green = vfunc(upper_green);
+
+    # print(*lower_green,*upper_green);
 
     ## cv2.inRange finds pixels which are inbetween lower_green, upper_green
     mask = cv2.inRange(image_copy, lower_green, upper_green)
@@ -72,31 +84,50 @@ def transmogrify(frame, frame_x, frame_y, imgx):
     # plt.imshow(masked_image); plt.show();      ## at this point, masked_image has the green mask removed, set to zero. 
     # return(masked_image);	 ## UNCOMMENT TO RETURN MASKED IMAGE (chroma areas are black, before edge detection)
     
-    edge_image = cv2.cvtColor(image_copy, cv2.COLOR_BGR2GRAY)	# convert to grayscale to reduce # of layers to rpocess
+    edge_image = cv2.cvtColor(image_copy, cv2.COLOR_RGB2GRAY)	# convert to grayscale to reduce # of layers to rpocess
     edge_image[mask == 0] = [0]        ## this sets everything NOT in the mask area to black (only chroma areas)
 
-    # https://www.pyimagesearch.com/2015/04/20/sorting-contours-using-python-and-opencv/
-    accumEdged = np.zeros(edge_image.shape[:2], dtype="uint8")
-    # loop over the blue, green, and red channels, respectively  
-    # (this takes about 30% of the time, it would be better to flatten the edge image to binary)
-    for chan in cv2.split(edge_image):
-    	# blur the channel, extract edges from it, and accumulate the set
-    	# of edges for the image
-    	chan = cv2.medianBlur(chan, 11)
-    	edged = cv2.Canny(chan, 50, 200)
-    	accumEdged = cv2.bitwise_or(accumEdged, edged)
-    	# show the accumulated edge map
-    	# cv2.imshow("Edge Map", accumEdged); plt.imshow(edge_image); plt.show();      ## at this point, masked_image has the green mask removed, set to zero. 
+    # each mask row is [width] pixels long
+    
+    # when the first pixel, and last pixel of the top row are both in the mask, then we consider
+    # this a candidate for a 100% bounding box
+    #print("MASK:{}x{} 0,0:{}  0,-1:{}".format(len(mask[0]),len(mask),mask[0][0],mask[0][-1]))
+    if (mask[0][0] == mask[0][-1] == 0xFF):
+    #if (False):
+      # bounding boxes[4] (412, 434, 1, 1) (413, 433, 1, 1) (414, 434, 1, 1) (413, 435, 1, 1)
+      # print("fullscreen chroma candidate!\n");
+      # cnts = [ [1,1,len(mask),len(mask[0])] ]
+      # ret,thresh = cv2.threshold(mask,127,255,cv2.THRESH_BINARY_INV)
+      cnts,hierarchy = cv2.findContours(mask, 1, 2)
+      cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:5]   # cnts is 2d array of ??, keep top 5
+      # M = cv2.moments(cnt)
+    else:
+      # bounding boxes[2] (357, 18, 147, 455) (431, 311, 2, 1)
+      # https://www.pyimagesearch.com/2015/04/20/sorting-contours-using-python-and-opencv/
+      accumEdged = np.zeros(edge_image.shape[:2], dtype="uint8")
+      # loop over the blue, green, and red channels, respectively  
+      # (this takes about 30% of the time, it would be better to flatten the edge image to binary)
+      for chan in cv2.split(edge_image):
+    	  # blur the channel, extract edges from it, and accumulate the set
+    	  # of edges for the image
+    	  chan = cv2.medianBlur(chan, 11)
+    	  edged = cv2.Canny(chan, 50, 200)
+    	  accumEdged = cv2.bitwise_or(accumEdged, edged)
+    	  # show the accumulated edge map
+    	  # cv2.imshow("Edge Map", accumEdged); plt.imshow(edge_image); plt.show();      ## at this point, masked_image has the green mask removed, set to zero. 
 
-    # find contours in the accumulated image, keeping only the largest ones (RETR_EXTERNAL)
-    # https://docs.opencv.org/3.4/d9/d8b/tutorial_py_contours_hierarchy.html
-    cnts = cv2.findContours(accumEdged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnts = imutils.grab_contours(cnts)	 # this is a convenience function in imutil, verifies opencv countour signature.
-    cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:5]   # cnts is 2d array of ??, keep top 5
-
+      # find contours in the accumulated image, keeping only the largest ones (RETR_EXTERNAL)
+      # https://docs.opencv.org/3.4/d9/d8b/tutorial_py_contours_hierarchy.html
+      cnts = cv2.findContours(accumEdged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+      cnts = imutils.grab_contours(cnts)	 # this is a convenience function in imutil, verifies opencv countour signature.
+      cnts = sorted(cnts, key=cv2.contourArea, reverse=True)[:5]   # cnts is 2d array of ??, keep top 5
+       
     if len(cnts)==0:
         # cnts will be zero when no countours can be found (i.e. blank screen)
+      #  print("CNTS IS ZERO!\n");
         return(frame);
+    #else:
+    #    print("cnts: {}".format(len(cnts)))
 
     # Find contours for image, which will detect all the boxes
     #im2, contours, hierarchy = cv2.findContours(edge_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -106,6 +137,7 @@ def transmogrify(frame, frame_x, frame_y, imgx):
     # (contours, boundingBoxes) = sort_contours(cnts, method="top-to-bottom")
     ## NOTE: i'm not sorting by screeen position ^^^ anymore. instead using the line below to get bounding Rectangles.
     boundingBoxes = [cv2.boundingRect(c) for c in cnts]
+    # print('bounding boxes[{}]'.format(len(boundingBoxes)),*boundingBoxes);
 
     # loop over the contours and draw them
     #orig = edge_image.copy();
